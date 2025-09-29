@@ -113,7 +113,3 @@ The application uses:
 - **Solana Web3.js** - Blockchain interaction
 - **Winston** - Logging
 - **Joi** - Input validation
-
-## Security Notice
-
-⚠️ This application contains critical security vulnerabilities that must be addressed before deployment. Check the Code Issues Panel for details.
