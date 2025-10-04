@@ -21,7 +21,8 @@ function createUserProfileRoutes(database, config) {
         body('dashboard_preferences').optional().isObject(),
         body('notification_preferences').optional().isObject(),
         body('trading_preferences').optional().isObject(),
-        body('favorite_validators').optional().isArray()
+        body('favorite_validators').optional().isArray(),
+        body('preferred_cluster').optional().isIn(['mainnet-beta', 'devnet', 'testnet'])
     ];
 
     const validateSimulation = [

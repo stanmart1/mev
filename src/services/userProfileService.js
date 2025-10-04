@@ -120,6 +120,12 @@ class UserProfileService extends EventEmitter {
                     paramIndex++;
                 }
 
+                if (preferences.preferred_cluster) {
+                    updates.push(`preferred_cluster = $${paramIndex}`);
+                    values.push(preferences.preferred_cluster);
+                    paramIndex++;
+                }
+
                 if (updates.length === 0) {
                     throw new Error('No valid preferences provided for update');
                 }

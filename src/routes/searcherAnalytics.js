@@ -7,7 +7,8 @@ const rateLimit = require('express-rate-limit');
  */
 function createSearcherAnalyticsRoutes(database, config, services) {
     const router = express.Router();
-    const { apiKeyService } = services;
+    const { authenticationService } = services;
+    const { optionalAuth } = require('../middleware/auth');
 
     // Rate limiting
     const searcherRateLimit = rateLimit({
@@ -21,7 +22,7 @@ function createSearcherAnalyticsRoutes(database, config, services) {
      * GET /api/searchers/analytics
      */
     router.get('/analytics',
-        apiKeyService.createApiKeyMiddleware(['searcher-analytics']),
+        optionalAuth(authenticationService),
         [
             query('period').optional().isIn(['daily', 'weekly', 'monthly']),
             query('limit').optional().isInt({ min: 1, max: 100 }).toInt()
@@ -77,7 +78,7 @@ function createSearcherAnalyticsRoutes(database, config, services) {
      * GET /api/searchers/:pubkey
      */
     router.get('/:pubkey',
-        apiKeyService.createApiKeyMiddleware(['searcher-analytics']),
+        optionalAuth(authenticationService),
         param('pubkey').isLength({ min: 32, max: 44 }),
         async (req, res) => {
             try {
@@ -123,7 +124,7 @@ function createSearcherAnalyticsRoutes(database, config, services) {
      * GET /api/searchers/leaderboard
      */
     router.get('/leaderboard',
-        apiKeyService.createApiKeyMiddleware(['searcher-analytics']),
+        optionalAuth(authenticationService),
         [query('timeframe').optional().isIn(['24h', '7d', '30d'])],
         async (req, res) => {
             try {

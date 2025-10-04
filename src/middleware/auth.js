@@ -58,12 +58,10 @@ function enhancedLoginRateLimit(windowMs = 15 * 60 * 1000, maxAttempts = 5) {
             if (now - attempts.firstAttempt > windowMs) {
                 loginAttempts.delete(email);
             } else if (attempts.count >= maxAttempts) {
-                // Progressive lockout: 15min, 30min, 1hr, 2hr, 24hr
-                const lockoutDurations = [15, 30, 60, 120, 1440]; // minutes
-                const lockoutIndex = Math.min(attempts.lockoutCount || 0, lockoutDurations.length - 1);
-                const lockoutMinutes = lockoutDurations[lockoutIndex];
+                // Progressive lockout: 60 seconds base
+                const lockoutSeconds = 60;
                 
-                attempts.lockoutUntil = now + (lockoutMinutes * 60 * 1000);
+                attempts.lockoutUntil = now + (lockoutSeconds * 1000);
                 attempts.lockoutCount = (attempts.lockoutCount || 0) + 1;
                 attempts.suspiciousIPs = attempts.suspiciousIPs || new Set();
                 attempts.suspiciousIPs.add(ip);
@@ -72,15 +70,15 @@ function enhancedLoginRateLimit(windowMs = 15 * 60 * 1000, maxAttempts = 5) {
                 logSecurityEvent('account_lockout', {
                     email,
                     ip,
-                    lockoutMinutes,
+                    lockoutSeconds,
                     lockoutCount: attempts.lockoutCount,
                     suspiciousIPCount: attempts.suspiciousIPs.size
                 });
                 
                 return res.status(429).json({
-                    error: `Account locked due to multiple failed attempts. Try again in ${lockoutMinutes} minutes.`,
+                    error: `Too many login attempts. Try again in ${lockoutSeconds} seconds.`,
                     code: 'ACCOUNT_LOCKOUT',
-                    retryAfter: lockoutMinutes * 60
+                    retryAfter: lockoutSeconds
                 });
             }
         }
@@ -137,6 +135,14 @@ function clearLoginAttempts(email) {
     if (loginAttempts.has(email)) {
         loginAttempts.delete(email);
     }
+}
+
+/**
+ * Force clear all login attempts (admin/debug use)
+ */
+function clearAllLoginAttempts() {
+    loginAttempts.clear();
+    ipAttempts.clear();
 }
 
 /**
@@ -480,6 +486,7 @@ module.exports = {
     enhancedLoginRateLimit,
     recordFailedLogin,
     clearLoginAttempts,
+    clearAllLoginAttempts,
     suspiciousActivityDetector,
     logSecurityEvent
 };

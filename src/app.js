@@ -32,17 +32,22 @@ const createHistoricalPerformanceRoutes = require('./routes/historicalPerformanc
 const createProfitSimulationsRoutes = require('./routes/profitSimulations');
 const createSearcherAnalyticsRoutes = require('./routes/searcherAnalytics');
 const createUserProfileRoutes = require('./routes/userProfile');
+const bundleRoutes = require('./routes/bundles');
+const jitoRoutes = require('./routes/jito');
+const settingsRoutes = require('./routes/settings');
+const clusterRoutes = require('./routes/cluster');
 
-// Import error handling middleware
+// Import middleware
 const {
     requestLogger,
     validateRequest,
     errorHandler,
     notFoundHandler,
-    healthCheck,
     formatResponse,
     corsConfig
 } = require('./middleware/errorHandler');
+const { requestMetrics, healthCheck } = require('./middleware/monitoring');
+const { responseFormatter } = require('./middleware/responseFormatter');
 
 // Initialize user management services
 const authenticationService = new AuthenticationService(pool, config);
@@ -172,22 +177,80 @@ liquidationScanner.on('scannerStopped', () => {
   logger.info('🛑 Liquidation scanner stopped');
 });
 
-// Security middleware
-app.use(helmet());
-app.use(cors(corsConfig()));
+// Enterprise security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "wss:", "ws:"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"]
+    }
+  },
+  crossOriginEmbedderPolicy: false
+}));
 
-// Request processing middleware
+// CORS configuration - must be before other middleware
+app.use(cors({
+  origin: function(origin, callback) {
+    const allowedOrigins = process.env.NODE_ENV === 'production' 
+      ? ['https://mev-analytics.com', 'https://app.mev-analytics.com']
+      : ['http://localhost:3000', 'http://localhost:5173'];
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all origins in development
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Accept'],
+  exposedHeaders: ['X-Total-Count', 'X-Rate-Limit-Remaining'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
+// Enterprise middleware stack
 app.use(healthCheck);
+app.use(requestMetrics);
 app.use(requestLogger);
 app.use(validateRequest);
+app.use(responseFormatter);
 app.use(formatResponse);
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+// Enterprise rate limiting
+const createRateLimiter = (windowMs, max, message) => rateLimit({
+  windowMs,
+  max,
+  message: { error: message, code: 'RATE_LIMIT_EXCEEDED' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      error: {
+        message: 'Rate limit exceeded',
+        code: 'RATE_LIMIT_EXCEEDED',
+        retryAfter: Math.round(windowMs / 1000)
+      }
+    });
+  }
 });
-app.use(limiter);
+
+app.use('/api/auth', createRateLimiter(15 * 60 * 1000, 10, 'Too many authentication attempts'));
+app.use('/api', createRateLimiter(15 * 60 * 1000, 1000, 'API rate limit exceeded'));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -227,7 +290,18 @@ app.use('/api/mev/opportunities', createMevOpportunitiesRoutes(pool, config, ser
 app.use('/api/validators', createValidatorRankingsRoutes(pool, config, services));
 app.use('/api/history', createHistoricalPerformanceRoutes(pool, config, services));
 app.use('/api/simulations', createProfitSimulationsRoutes(pool, config, services));
+app.use('/api/profit', createProfitSimulationsRoutes(pool, config, services));
+app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/searcher-performance', require('./routes/searcherPerformance'));
+app.use('/api/market-intelligence', require('./routes/marketIntelligence'));
+app.use('/api/education', require('./routes/education'));
+app.use('/api/documentation', require('./routes/documentation'));
 app.use('/api/searchers', createSearcherAnalyticsRoutes(pool, config, services));
+app.use('/api/bundles', bundleRoutes);
+app.use('/api/jito', jitoRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/cluster', clusterRoutes);
+app.use('/api/activity', require('./routes/activity'));
 
 // Delegation analytics routes
 app.use('/api/delegation-analytics', 
@@ -256,7 +330,7 @@ app.get('/api/status', optionalAuth(authenticationService), (req, res) => {
 
 // Enhanced MEV opportunities endpoint with filtering and authentication
 app.get('/api/opportunities', 
-  apiKeyService.createApiKeyMiddleware(['basic-analytics', 'mev-detection']),
+  optionalAuth(authenticationService),
   async (req, res) => {
   try {
     const { type, dex, limit = 50, minProfit } = req.query;
@@ -292,8 +366,15 @@ app.get('/api/opportunities',
     
     res.json({
       success: true,
-      count: result.rows.length,
-      opportunities: result.rows
+      data: {
+        opportunities: result.rows,
+        pagination: {
+          total: result.rows.length,
+          limit: parseInt(limit),
+          offset: 0,
+          hasNext: false
+        }
+      }
     });
   } catch (error) {
     logger.error('Error fetching opportunities:', error);
@@ -1791,11 +1872,14 @@ app.get('/api/validators', async (req, res) => {
         client.release();
         
         res.json({
-            validators: result.rows,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                total: result.rows.length
+            success: true,
+            data: {
+                validators: result.rows,
+                pagination: {
+                    limit: parseInt(limit),
+                    offset: parseInt(offset),
+                    total: result.rows.length
+                }
             }
         });
     } catch (error) {

@@ -19,7 +19,9 @@ const config = {
       'wss://api.mainnet-beta.solana.com' : 'wss://api.devnet.solana.com'),
     commitment: 'confirmed',
     enablePolling: true, // Fallback polling for low-activity networks
-    pollingInterval: 10000 // 10 seconds
+    pollingInterval: 45000, // 45 seconds (increased from 10s)
+    maxConcurrentRequests: 2, // Limit concurrent requests
+    requestsPerSecond: 3 // Conservative rate limit
   },
   
   // DEX Program IDs
@@ -53,6 +55,12 @@ const config = {
   server: {
     port: process.env.PORT || 3001,
     host: process.env.HOST || 'localhost'
+  },
+  
+  // JWT configuration
+  jwt: {
+    secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production',
+    expiresIn: process.env.JWT_EXPIRES_IN || '24h'
   },
   
   // MEV configuration - Lowered thresholds for maximum opportunity detection

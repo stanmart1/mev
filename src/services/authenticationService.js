@@ -16,11 +16,11 @@ class AuthenticationService extends EventEmitter {
         this.config = config;
         this.saltRounds = 12;
         this.jwtSecret = config.jwt.secret;
-        this.jwtExpiresIn = config.jwt.expiresIn || '24h';
+        this.jwtExpiresIn = config.jwt.expiresIn || '1h';
         this.refreshTokenExpiresIn = config.jwt.refreshExpiresIn || '7d';
         
         // Initialize password recovery service
-        this.passwordRecovery = new PasswordRecoveryService(database, config);
+        // this.passwordRecovery = new PasswordRecoveryService(database, config);
     }
 
     /**
@@ -156,10 +156,14 @@ class AuthenticationService extends EventEmitter {
                 throw new Error('Invalid wallet signature');
             }
 
-            // Check if message is recent (within 5 minutes)
-            const messageData = JSON.parse(message);
-            const messageTime = new Date(messageData.timestamp);
-            const now = new Date();
+            // Extract timestamp from message
+            const timestampMatch = message.match(/Timestamp: (\d+)/);
+            if (!timestampMatch) {
+                throw new Error('Invalid message format');
+            }
+            
+            const messageTime = parseInt(timestampMatch[1]);
+            const now = Date.now();
             const timeDiff = (now - messageTime) / 1000; // seconds
 
             if (timeDiff > 300) { // 5 minutes
@@ -323,11 +327,15 @@ class AuthenticationService extends EventEmitter {
     verifyWalletSignature(walletAddress, signature, message) {
         try {
             const publicKeyBytes = bs58.decode(walletAddress);
-            const signatureBytes = bs58.decode(signature);
+            // Handle signature as either base58 string or array
+            const signatureBytes = Array.isArray(signature) 
+                ? new Uint8Array(signature)
+                : bs58.decode(signature);
             const messageBytes = new TextEncoder().encode(message);
 
             return nacl.sign.detached.verify(messageBytes, signatureBytes, publicKeyBytes);
         } catch (error) {
+            console.error('Signature verification error:', error);
             return false;
         }
     }
@@ -507,6 +515,51 @@ class AuthenticationService extends EventEmitter {
     sanitizeUser(user) {
         const { password_hash, ...sanitizedUser } = user;
         return sanitizedUser;
+    }
+
+    /**
+     * Update user profile
+     * @param {string} userId - User ID
+     * @param {Object} updates - Profile updates
+     */
+    async updateProfile(userId, updates) {
+        try {
+            const { username, email } = updates;
+            const client = await this.db.connect();
+            try {
+                const fields = [];
+                const values = [];
+                let paramCount = 1;
+
+                if (username) {
+                    fields.push(`username = $${paramCount++}`);
+                    values.push(username);
+                }
+                if (email) {
+                    fields.push(`email = $${paramCount++}`);
+                    values.push(email.toLowerCase());
+                }
+
+                if (fields.length === 0) return;
+
+                fields.push(`updated_at = NOW()`);
+                values.push(userId);
+
+                await client.query(`
+                    UPDATE users SET ${fields.join(', ')}
+                    WHERE id = $${paramCount}
+                `, values);
+
+                this.emit('profileUpdated', { userId, timestamp: new Date() });
+
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            this.emit('authError', { action: 'updateProfile', error: error.message });
+            throw error;
+        }
     }
 
     /**

@@ -11,6 +11,7 @@ const {
     enhancedLoginRateLimit,
     recordFailedLogin,
     clearLoginAttempts,
+    clearAllLoginAttempts,
     suspiciousActivityDetector
 } = require('../middleware/auth');
 
@@ -77,7 +78,7 @@ function createAuthRoutes(database, config) {
 
     router.post('/login', 
         validateLogin, 
-        enhancedLoginRateLimit(15 * 60 * 1000, 5), // 5 attempts per 15 minutes
+        enhancedLoginRateLimit(60 * 1000, 5), // 5 attempts per 60 seconds
         async (req, res) => {
         try {
             const errors = validationResult(req);
@@ -125,7 +126,7 @@ function createAuthRoutes(database, config) {
 
     router.post('/wallet-login', 
         validateWalletLogin, 
-        enhancedLoginRateLimit(15 * 60 * 1000, 10), // 10 attempts per 15 minutes for wallet login
+        enhancedLoginRateLimit(60 * 1000, 3), // 3 attempts per 60 seconds for wallet login
         async (req, res) => {
         try {
             const errors = validationResult(req);
@@ -199,6 +200,66 @@ function createAuthRoutes(database, config) {
     });
 
     // User management routes
+    router.get('/verify', 
+        rateLimitByUser(60, 10), // 10 requests per minute per user
+        authenticateToken(authService), 
+        async (req, res) => {
+        try {
+            const user = await authService.getUserById(req.user.userId);
+            
+            res.json({
+                success: true,
+                data: {
+                    user: authService.sanitizeUser(user)
+                }
+            });
+        } catch (error) {
+            res.status(401).json({
+                success: false,
+                error: 'Token verification failed',
+                code: 'TOKEN_INVALID'
+            });
+        }
+    });
+
+    router.post('/signup', [
+        body('username').notEmpty().isLength({ min: 3, max: 50 }),
+        body('email').isEmail().normalizeEmail(),
+        body('password').isLength({ min: 6 })
+    ], async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Validation failed',
+                    errors: errors.array()
+                });
+            }
+
+            const { username, email, password } = req.body;
+            const result = await authService.registerUser({
+                username,
+                email,
+                password,
+                role: 'user'
+            });
+
+            res.status(201).json({
+                success: true,
+                message: 'Account created successfully',
+                token: result.token,
+                user: result.user
+            });
+
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    });
+
     router.get('/profile', authenticateToken(authService), async (req, res) => {
         try {
             const user = await authService.getUserById(req.user.userId);
@@ -216,6 +277,36 @@ function createAuthRoutes(database, config) {
             res.status(500).json({
                 error: 'Profile fetch error',
                 code: 'PROFILE_ERROR'
+            });
+        }
+    });
+
+    router.put('/profile', authenticateToken(authService), [
+        body('username').optional().isLength({ min: 3, max: 50 }),
+        body('email').optional().isEmail().normalizeEmail()
+    ], async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Validation failed',
+                    errors: errors.array()
+                });
+            }
+
+            const { username, email } = req.body;
+            await authService.updateProfile(req.user.userId, { username, email });
+
+            res.json({
+                success: true,
+                message: 'Profile updated successfully'
+            });
+
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
             });
         }
     });
@@ -333,6 +424,26 @@ function createAuthRoutes(database, config) {
             });
         }
     });
+
+    // Emergency rate limit reset (admin only)
+    router.post('/admin/reset-rate-limits',
+        authenticateToken(authService),
+        requireAdmin(authzService),
+        async (req, res) => {
+            try {
+                clearAllLoginAttempts();
+                res.json({
+                    success: true,
+                    message: 'All rate limits cleared'
+                });
+            } catch (error) {
+                res.status(500).json({
+                    error: 'Reset failed',
+                    code: 'RESET_ERROR'
+                });
+            }
+        }
+    );
 
     // Admin routes
     router.put('/users/:userId/role', 

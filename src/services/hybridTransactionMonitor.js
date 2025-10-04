@@ -1,4 +1,5 @@
 const SolanaService = require('./solanaService');
+const RateLimitedSolanaService = require('./rateLimitedSolanaService');
 const ArbitrageDetectionEngine = require('./arbitrageDetectionEngine');
 const logger = require('../config/logger');
 const pool = require('../config/database');
@@ -10,12 +11,16 @@ class HybridTransactionMonitor extends EventEmitter {
   constructor() {
     super();
     this.solanaService = new SolanaService();
+    this.rateLimitedService = new RateLimitedSolanaService(
+      config.solana.rpcUrl || 'https://api.devnet.solana.com'
+    );
     this.arbitrageEngine = new ArbitrageDetectionEngine();
     this.isRunning = false;
     this.subscriptions = [];
     this.pollingInterval = null;
     this.arbitrageInterval = null;
     this.lastProcessedSlots = new Map(); // Track last processed slot per program
+    this.programPollingIndex = 0; // Round-robin polling index
     
     this.stats = {
       transactionsProcessed: 0,
@@ -28,21 +33,13 @@ class HybridTransactionMonitor extends EventEmitter {
       arbitrageScans: 0
     };
     
-    // DEX Programs to monitor - Enhanced with Jupiter and more DEXs
+    // Reduced DEX Programs to monitor - Focus on highest activity with valid program IDs
     this.dexPrograms = [
-      { name: 'Raydium AMM', id: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8', type: 'amm' },
-      { name: 'Raydium Serum', id: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM', type: 'orderbook' },
-      { name: 'Orca Whirlpool', id: 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc', type: 'clmm' },
-      { name: 'Orca Legacy', id: '9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP', type: 'amm' },
-      { name: 'Serum DEX', id: '9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin', type: 'orderbook' },
-      // Jupiter aggregators (highest activity)
-      { name: 'Jupiter V4', id: 'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB', type: 'aggregator' },
-      { name: 'Jupiter V6', id: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', type: 'aggregator' },
-      { name: 'Jupiter Perps', id: 'PERPHjGBqRHArX4DySjwM6UJHiycKwGPABe2zSMiPZUi', type: 'perps' },
-      // Additional high-activity DEXs
-      { name: 'OpenBook V1', id: 'srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX', type: 'orderbook' },
-      { name: 'OpenBook V2', id: 'opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb', type: 'orderbook' },
-      { name: 'Meteora Pools', id: 'Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB', type: 'stable' }
+      { name: 'Raydium AMM', id: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8', type: 'amm', priority: 1 },
+      { name: 'Orca Whirlpool', id: 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc', type: 'clmm', priority: 1 },
+      { name: 'Jupiter V6', id: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', type: 'aggregator', priority: 1 },
+      { name: 'Orca Legacy', id: '9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP', type: 'amm', priority: 2 },
+      { name: 'Serum DEX', id: '9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin', type: 'orderbook', priority: 3 }
     ];
   }
 
@@ -93,21 +90,24 @@ class HybridTransactionMonitor extends EventEmitter {
   }
 
   startPollingMonitoring() {
+    // Increased polling interval to reduce rate limiting
+    const pollingInterval = Math.max(config.solana.pollingInterval || 30000, 30000); // Min 30 seconds
+    
     this.pollingInterval = setInterval(async () => {
       try {
-        await this.pollForTransactions();
+        await this.pollForTransactionsRoundRobin();
         this.stats.pollingRounds++;
       } catch (error) {
         logger.error('Error in polling round:', error);
         this.stats.errors++;
       }
-    }, config.solana.pollingInterval);
+    }, pollingInterval);
     
-    logger.info(`Polling monitoring: started with ${config.solana.pollingInterval}ms interval`);
+    logger.info(`Polling monitoring: started with ${pollingInterval}ms interval (rate-limited)`);
   }
 
   startArbitrageDetection() {
-    // Start continuous arbitrage detection every 20 seconds
+    // Reduced arbitrage detection frequency to prevent rate limiting
     this.arbitrageInterval = setInterval(async () => {
       try {
         const opportunities = await this.arbitrageEngine.detectArbitrageOpportunities();
@@ -127,49 +127,61 @@ class HybridTransactionMonitor extends EventEmitter {
         logger.error('Error in arbitrage detection:', error);
         this.stats.errors++;
       }
-    }, 20000); // Every 20 seconds
+    }, 60000); // Every 60 seconds (reduced from 20s)
     
-    logger.info('Advanced arbitrage detection: started with 20s interval');
+    logger.info('Advanced arbitrage detection: started with 60s interval (rate-limited)');
   }
 
-  async pollForTransactions() {
-    for (const program of this.dexPrograms) {
-      try {
-        const programPubkey = new PublicKey(program.id);
-        
-        // Get recent signatures
-        const signatures = await this.solanaService.connection.getSignaturesForAddress(
-          programPubkey,
-          { 
-            limit: 5,
-            before: this.lastProcessedSlots.get(program.id)
-          }
-        );
-
-        if (signatures.length > 0) {
-          logger.info(`Polling: Found ${signatures.length} new transactions for ${program.name}`);
-          
-          // Update last processed signature
-          this.lastProcessedSlots.set(program.id, signatures[0].signature);
-          
-          // Process each transaction
-          for (const sigInfo of signatures.reverse()) { // Process oldest first
-            if (sigInfo.err) continue; // Skip failed transactions
-            
-            await this.processPolledTransaction(sigInfo, program);
-          }
-        }
-      } catch (error) {
-        logger.error(`Error polling ${program.name}:`, error);
-        this.stats.errors++;
+  // Round-robin polling to reduce concurrent requests
+  async pollForTransactionsRoundRobin() {
+    // Only poll one program per round to reduce rate limiting
+    const program = this.dexPrograms[this.programPollingIndex];
+    this.programPollingIndex = (this.programPollingIndex + 1) % this.dexPrograms.length;
+    
+    try {
+      // Validate program ID before creating PublicKey
+      if (!program.id || program.id.length < 32) {
+        logger.warn(`Invalid program ID for ${program.name}: ${program.id}`);
+        return;
       }
+      
+      const programPubkey = new PublicKey(program.id);
+      
+      // Use rate-limited service with reduced limit
+      const signatures = await this.rateLimitedService.getSignaturesForAddress(
+        programPubkey,
+        { 
+          limit: 3, // Reduced from 5
+          before: this.lastProcessedSlots.get(program.id)
+        }
+      );
+
+      if (signatures.length > 0) {
+        logger.info(`Polling: Found ${signatures.length} new transactions for ${program.name}`);
+        
+        // Update last processed signature
+        this.lastProcessedSlots.set(program.id, signatures[0].signature);
+        
+        // Process only the most recent transaction to reduce load
+        const mostRecent = signatures[signatures.length - 1];
+        if (!mostRecent.err) {
+          await this.processPolledTransaction(mostRecent, program);
+        }
+      }
+    } catch (error) {
+      if (error.message.includes('Invalid public key input')) {
+        logger.warn(`Invalid public key for ${program.name}: ${program.id}`);
+      } else {
+        logger.error(`Error polling ${program.name}:`, error.message);
+      }
+      this.stats.errors++;
     }
   }
 
   async processPolledTransaction(sigInfo, program) {
     try {
-      // Get full transaction
-      const transaction = await this.solanaService.getTransaction(sigInfo.signature);
+      // Use rate-limited service for transaction fetching
+      const transaction = await this.rateLimitedService.getTransaction(sigInfo.signature);
       if (!transaction || !transaction.meta) return;
 
       // Create log data similar to WebSocket format
@@ -178,14 +190,19 @@ class HybridTransactionMonitor extends EventEmitter {
         slot: sigInfo.slot,
         logs: transaction.meta.logMessages || [],
         err: transaction.meta.err,
-        source: 'polling' // Mark as polling source
+        source: 'polling', // Mark as polling source
+        program: program.name
       };
 
       this.stats.transactionsProcessed++;
       await this.processTransaction(logData);
       
     } catch (error) {
-      logger.error(`Error processing polled transaction ${sigInfo.signature}:`, error);
+      if (error.message.includes('429')) {
+        logger.warn(`Rate limited while processing transaction ${sigInfo.signature}`);
+      } else {
+        logger.error(`Error processing polled transaction ${sigInfo.signature}:`, error.message);
+      }
       this.stats.errors++;
     }
   }
@@ -801,10 +818,17 @@ class HybridTransactionMonitor extends EventEmitter {
   }
 
   logStats() {
+    const rateLimitStats = this.rateLimitedService.getStats();
     logger.info('Hybrid Monitor Stats:', {
       ...this.stats,
       wsActive: this.subscriptions.length > 0,
-      pollingActive: this.pollingInterval !== null
+      pollingActive: this.pollingInterval !== null,
+      rateLimit: {
+        queueLength: rateLimitStats.queueLength,
+        successRate: rateLimitStats.successRate.toFixed(1) + '%',
+        avgResponseTime: rateLimitStats.averageResponseTime.toFixed(0) + 'ms',
+        rateLimited: rateLimitStats.rateLimitedRequests
+      }
     });
   }
 

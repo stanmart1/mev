@@ -8,7 +8,8 @@ const rateLimit = require('express-rate-limit');
  */
 function createMevOpportunitiesRoutes(database, config, services) {
     const router = express.Router();
-    const { authenticationService, authorizationService, apiKeyService } = services;
+    const { authenticationService } = services;
+    const { optionalAuth } = require('../middleware/auth');
 
     // Rate limiting for MEV endpoints
     const mevRateLimit = rateLimit({
@@ -38,7 +39,7 @@ function createMevOpportunitiesRoutes(database, config, services) {
      * Get live MEV opportunities with real-time data
      */
     router.get('/live',
-        apiKeyService.createApiKeyMiddleware(['mev-detection']),
+        optionalAuth(authenticationService),
         validateOpportunityQuery,
         async (req, res) => {
             try {
@@ -156,7 +157,7 @@ function createMevOpportunitiesRoutes(database, config, services) {
      * Get detailed information about a specific MEV opportunity
      */
     router.get('/:id',
-        apiKeyService.createApiKeyMiddleware(['mev-detection']),
+        optionalAuth(authenticationService),
         param('id').isUUID(),
         async (req, res) => {
             try {
@@ -205,7 +206,7 @@ function createMevOpportunitiesRoutes(database, config, services) {
      * Get statistical summary of MEV opportunities
      */
     router.get('/stats',
-        apiKeyService.createApiKeyMiddleware(['mev-detection']),
+        optionalAuth(authenticationService),
         query('timeframe').optional().isIn(['1h', '6h', '24h', '7d', '30d']),
         async (req, res) => {
             try {

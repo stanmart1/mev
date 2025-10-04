@@ -21,8 +21,10 @@ class SolanaService {
       const version = await this.connection.getVersion();
       logger.info(`Connected to Solana RPC: ${version['solana-core']}`);
       
-      // Initialize WebSocket connection
-      await this.initializeWebSocket();
+      // Initialize WebSocket connection (non-blocking)
+      this.initializeWebSocket().catch(err => {
+        logger.warn('WebSocket initialization failed, will retry:', err.message);
+      });
       
       this.isConnected = true;
       logger.info('Solana service initialized successfully');
@@ -33,33 +35,74 @@ class SolanaService {
   }
 
   async initializeWebSocket() {
-    return new Promise((resolve, reject) => {
-      this.wsConnection = new WebSocket(config.solana.wsUrl);
-      
-      this.wsConnection.on('open', () => {
-        logger.info('WebSocket connection established');
-        resolve();
-      });
-      
-      this.wsConnection.on('error', (error) => {
-        logger.error('WebSocket error:', error);
-        reject(error);
-      });
-      
-      this.wsConnection.on('close', () => {
-        logger.warn('WebSocket connection closed, attempting to reconnect...');
-        setTimeout(() => this.initializeWebSocket(), 5000);
-      });
-      
-      this.wsConnection.on('message', (data) => {
-        try {
-          const message = JSON.parse(data);
-          this.handleWebSocketMessage(message);
-        } catch (error) {
-          logger.error('Error parsing WebSocket message:', error);
-        }
-      });
+    return new Promise((resolve) => {
+      try {
+        this.wsConnection = new WebSocket(config.solana.wsUrl, {
+          handshakeTimeout: 10000,
+          perMessageDeflate: false
+        });
+        
+        const connectionTimeout = setTimeout(() => {
+          logger.warn('WebSocket connection timeout, will retry...');
+          if (this.wsConnection) {
+            this.wsConnection.terminate();
+          }
+          resolve(); // Resolve anyway to not block initialization
+        }, 15000);
+        
+        this.wsConnection.on('open', () => {
+          clearTimeout(connectionTimeout);
+          logger.info('WebSocket connection established');
+          this.wsRetryCount = 0;
+          resolve();
+        });
+        
+        this.wsConnection.on('error', (error) => {
+          clearTimeout(connectionTimeout);
+          logger.error('WebSocket error:', error.message || error);
+          // Don't reject, just log and continue
+        });
+        
+        this.wsConnection.on('close', (code, reason) => {
+          clearTimeout(connectionTimeout);
+          logger.warn(`WebSocket connection closed (code: ${code}, reason: ${reason || 'none'})`);
+          this.scheduleReconnect();
+        });
+        
+        this.wsConnection.on('message', (data) => {
+          try {
+            const message = JSON.parse(data);
+            this.handleWebSocketMessage(message);
+          } catch (error) {
+            logger.error('Error parsing WebSocket message:', error);
+          }
+        });
+      } catch (error) {
+        logger.error('Failed to create WebSocket connection:', error);
+        resolve(); // Resolve anyway to not block initialization
+      }
     });
+  }
+
+  scheduleReconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
+    
+    this.wsRetryCount = (this.wsRetryCount || 0) + 1;
+    const delay = Math.min(5000 * this.wsRetryCount, 60000); // Max 60 seconds
+    
+    logger.info(`Scheduling WebSocket reconnect in ${delay}ms (attempt ${this.wsRetryCount})`);
+    
+    this.reconnectTimer = setTimeout(() => {
+      if (this.wsRetryCount <= 10) { // Max 10 retries
+        this.initializeWebSocket().catch(err => {
+          logger.error('WebSocket reconnect failed:', err);
+        });
+      } else {
+        logger.error('Max WebSocket reconnect attempts reached, giving up');
+      }
+    }, delay);
   }
 
   handleWebSocketMessage(message) {
@@ -185,6 +228,12 @@ class SolanaService {
   }
 
   disconnect() {
+    // Clear reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
     // Unsubscribe from all programs
     for (const [programId] of this.subscriptions) {
       this.unsubscribeFromProgram(programId);
@@ -193,6 +242,7 @@ class SolanaService {
     // Close WebSocket connection
     if (this.wsConnection) {
       this.wsConnection.close();
+      this.wsConnection = null;
     }
     
     this.isConnected = false;

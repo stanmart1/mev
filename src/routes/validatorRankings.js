@@ -8,7 +8,8 @@ const rateLimit = require('express-rate-limit');
  */
 function createValidatorRankingsRoutes(database, config, services) {
     const router = express.Router();
-    const { authenticationService, authorizationService, apiKeyService } = services;
+    const { authenticationService } = services;
+    const { optionalAuth } = require('../middleware/auth');
 
     // Rate limiting for validator endpoints
     const validatorRateLimit = rateLimit({
@@ -37,7 +38,7 @@ function createValidatorRankingsRoutes(database, config, services) {
      * Get comprehensive validator rankings with multiple categories
      */
     router.get('/',
-        apiKeyService.createApiKeyMiddleware(['validator-analytics']),
+        optionalAuth(authenticationService),
         validateRankingQuery,
         async (req, res) => {
             try {
@@ -153,7 +154,7 @@ function createValidatorRankingsRoutes(database, config, services) {
      * Get detailed information about a specific validator
      */
     router.get('/:address',
-        apiKeyService.createApiKeyMiddleware(['validator-analytics']),
+        optionalAuth(authenticationService),
         param('address').isLength({ min: 32, max: 44 }),
         async (req, res) => {
             try {
@@ -253,7 +254,7 @@ function createValidatorRankingsRoutes(database, config, services) {
      * Compare multiple validators side by side
      */
     router.get('/compare',
-        apiKeyService.createApiKeyMiddleware(['validator-analytics']),
+        optionalAuth(authenticationService),
         query('addresses').isString().custom((value) => {
             const addresses = value.split(',');
             if (addresses.length < 2 || addresses.length > 10) {
@@ -336,7 +337,7 @@ function createValidatorRankingsRoutes(database, config, services) {
      * Get network-wide validator statistics
      */
     router.get('/network/stats',
-        apiKeyService.createApiKeyMiddleware(['validator-analytics']),
+        optionalAuth(authenticationService),
         async (req, res) => {
             try {
                 const client = await database.connect();

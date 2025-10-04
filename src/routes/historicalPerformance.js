@@ -8,7 +8,8 @@ const rateLimit = require('express-rate-limit');
  */
 function createHistoricalPerformanceRoutes(database, config, services) {
     const router = express.Router();
-    const { authenticationService, authorizationService, apiKeyService } = services;
+    const { authenticationService } = services;
+    const { optionalAuth } = require('../middleware/auth');
 
     // Rate limiting for historical data endpoints
     const historyRateLimit = rateLimit({
@@ -36,7 +37,7 @@ function createHistoricalPerformanceRoutes(database, config, services) {
      * Get historical MEV performance data across the network
      */
     router.get('/mev-performance',
-        apiKeyService.createApiKeyMiddleware(['analytics', 'research']),
+        optionalAuth(authenticationService),
         validateHistoryQuery,
         async (req, res) => {
             try {
@@ -139,7 +140,7 @@ function createHistoricalPerformanceRoutes(database, config, services) {
      * Get historical performance data for a specific validator
      */
     router.get('/validator/:address',
-        apiKeyService.createApiKeyMiddleware(['validator-analytics', 'research']),
+        optionalAuth(authenticationService),
         param('address').isLength({ min: 32, max: 44 }),
         validateHistoryQuery,
         async (req, res) => {
@@ -279,7 +280,7 @@ function createHistoricalPerformanceRoutes(database, config, services) {
      * Get network-wide historical trends and statistics
      */
     router.get('/network-trends',
-        apiKeyService.createApiKeyMiddleware(['analytics', 'research']),
+        optionalAuth(authenticationService),
         validateHistoryQuery,
         async (req, res) => {
             try {

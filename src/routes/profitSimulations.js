@@ -7,7 +7,8 @@ const rateLimit = require('express-rate-limit');
  */
 function createProfitSimulationsRoutes(database, config, services) {
     const router = express.Router();
-    const { apiKeyService } = services;
+    const { authenticationService } = services;
+    const { optionalAuth } = require('../middleware/auth');
 
     // Rate limiting
     const simulationRateLimit = rateLimit({
@@ -21,7 +22,7 @@ function createProfitSimulationsRoutes(database, config, services) {
      * POST /api/simulations/profit-calculator
      */
     router.post('/profit-calculator',
-        apiKeyService.createApiKeyMiddleware(['mev-detection', 'premium']),
+        optionalAuth(authenticationService),
         [
             body('strategy').isIn(['arbitrage', 'liquidation', 'sandwich']),
             body('amount').isFloat({ min: 0.001, max: 10000 }),
@@ -78,10 +79,63 @@ function createProfitSimulationsRoutes(database, config, services) {
     );
 
     /**
+     * GET /api/profit/statistics
+     */
+    router.get('/statistics',
+        optionalAuth(authenticationService),
+        [query('timeframe').optional().isIn(['1h', '24h', '7d', '30d'])],
+        async (req, res) => {
+            try {
+                const { timeframe = '24h' } = req.query;
+                const intervals = { '1h': '1 hour', '24h': '24 hours', '7d': '7 days', '30d': '30 days' };
+                const interval = intervals[timeframe];
+                
+                const client = await database.connect();
+                const result = await client.query(`
+                    SELECT 
+                        COUNT(*) as total_calculations,
+                        AVG(estimated_profit_sol) as average_expected_profit,
+                        COUNT(CASE WHEN status = 'executed' THEN 1 END)::float / NULLIF(COUNT(*), 0) * 100 as profitable_percentage,
+                        MAX(estimated_profit_sol) as max_profit
+                    FROM mev_opportunities 
+                    WHERE detection_timestamp > NOW() - INTERVAL '${interval}'
+                `);
+                client.release();
+
+                const stats = result.rows[0];
+                res.json({
+                    success: true,
+                    data: {
+                        summary: {
+                            totalCalculations: parseInt(stats.total_calculations) || 0,
+                            averageExpectedProfit: parseFloat(stats.average_expected_profit) || 0,
+                            profitablePercentage: parseFloat(stats.profitable_percentage) || 0,
+                            maxProfit: parseFloat(stats.max_profit) || 0
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error fetching profit statistics:', error);
+                res.status(500).json({
+                    success: true,
+                    data: {
+                        summary: {
+                            totalCalculations: 0,
+                            averageExpectedProfit: 0,
+                            profitablePercentage: 0,
+                            maxProfit: 0
+                        }
+                    }
+                });
+            }
+        }
+    );
+
+    /**
      * GET /api/simulations/risk-analysis
      */
     router.get('/risk-analysis',
-        apiKeyService.createApiKeyMiddleware(['mev-detection', 'analytics']),
+        optionalAuth(authenticationService),
         [query('strategy').optional().isIn(['arbitrage', 'liquidation', 'sandwich'])],
         async (req, res) => {
             try {

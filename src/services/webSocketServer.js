@@ -23,14 +23,14 @@ class MEVWebSocketServer extends EventEmitter {
             subscriptionCount: 0
         };
         
-        // Subscription channels
+        // Subscription channels - match frontend
         this.channels = {
-            MEV_OPPORTUNITIES: 'mev_opportunities',
-            VALIDATOR_UPDATES: 'validator_updates',
-            MARKET_DATA: 'market_data',
-            SEARCHER_ANALYTICS: 'searcher_analytics',
-            PRICE_UPDATES: 'price_updates',
-            NETWORK_STATS: 'network_stats'
+            MEV_OPPORTUNITIES: 'MEV_OPPORTUNITIES',
+            VALIDATOR_PERFORMANCE: 'VALIDATOR_PERFORMANCE',
+            MARKET_DATA: 'MARKET_DATA',
+            USER_NOTIFICATIONS: 'USER_NOTIFICATIONS',
+            PRICE_UPDATES: 'PRICE_UPDATES',
+            NETWORK_STATS: 'NETWORK_STATS'
         };
 
         // Initialize WebSocket server
