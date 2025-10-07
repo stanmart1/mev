@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiService from '../services/api';
 import { useWebSocket } from './useWebSocket';
+import { AlertMonitor } from '../services/alertMonitor';
 
 export function useMEV(demoMode = false) {
   const queryClient = useQueryClient();
@@ -74,6 +75,7 @@ export function useMEV(demoMode = false) {
   // WebSocket subscriptions for real-time updates with enhanced data simulation
   useEffect(() => {
     const handleMEVUpdate = (data) => {
+      AlertMonitor.checkAlerts(data);
       queryClient.setQueryData(['mev', 'opportunities'], (oldData) => {
         if (!oldData) return [data];
         // Add new opportunity or update existing one

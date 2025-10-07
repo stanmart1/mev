@@ -4,6 +4,12 @@ import { ArrowLeft, CheckCircle, Award, MessageSquare } from 'lucide-react';
 import api from '../../services/api';
 import { useAnnouncement } from '../../hooks/useAnnouncement';
 import FeedbackModal from '../../components/FeedbackModal';
+import CodePlayground from '../../components/education/CodePlayground';
+import InteractiveCalculator from '../../components/education/InteractiveCalculator';
+import ArbitrageSimulator from '../../components/education/ArbitrageSimulator';
+import BundleBuilder from '../../components/education/BundleBuilder';
+import RiskCalculator from '../../components/education/RiskCalculator';
+import ValidatorComparison from '../../components/education/ValidatorComparison';
 
 const ModuleView = () => {
   const { slug } = useParams();
@@ -287,6 +293,13 @@ const ModuleView = () => {
                   </div>
                 )}
 
+                {section.content.code && (
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold mb-2">Code Example:</h3>
+                    <CodePlayground initialCode={section.content.code} language="javascript" />
+                  </div>
+                )}
+
                 {section.content.examples && (
                   <div className="space-y-3 mb-4">
                     <h3 className="text-lg font-semibold">Examples:</h3>
@@ -296,6 +309,36 @@ const ModuleView = () => {
                         <p className="text-gray-300">{ex.description}</p>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {section.title.includes('Calculator') && (
+                  <div className="mb-4">
+                    <InteractiveCalculator type="arbitrage" />
+                  </div>
+                )}
+
+                {(section.title.includes('DEX Arbitrage') || section.title.includes('Arbitrage Fundamentals')) && (
+                  <div className="mb-4">
+                    <ArbitrageSimulator />
+                  </div>
+                )}
+
+                {(section.title.includes('Bundle') || section.title.includes('Transaction Ordering')) && (
+                  <div className="mb-4">
+                    <BundleBuilder />
+                  </div>
+                )}
+
+                {(section.title.includes('Risk') || section.title.includes('Position Sizing')) && (
+                  <div className="mb-4">
+                    <RiskCalculator />
+                  </div>
+                )}
+
+                {(section.title.includes('Validator') || section.title.includes('Performance Analysis')) && (
+                  <div className="mb-4">
+                    <ValidatorComparison />
                   </div>
                 )}
 

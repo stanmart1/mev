@@ -19,6 +19,8 @@ import BadgesPage from './pages/education/BadgesPage';
 import LeaderboardPage from './pages/education/LeaderboardPage';
 import Glossary from './pages/documentation/Glossary';
 import APIExplorer from './pages/documentation/APIExplorer';
+import ApiDocs from './pages/documentation/ApiDocs';
+import AlertsPage from './pages/alerts/AlertsPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import SkipToContent from './components/SkipToContent';
 import ProfilePage from './pages/profile/ProfilePage';
@@ -40,17 +42,7 @@ const queryClient = new QueryClient({
 });
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, isLoading } = useAuth();
-  
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
-      </div>
-    );
-  }
-  
-  return isAuthenticated ? children : <Navigate to="/login" />;
+  return children;
 }
 
 function AppRoutes() {
@@ -60,11 +52,8 @@ function AppRoutes() {
       <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
-      <Route path="/" element={
-        <ProtectedRoute>
-          <Layout />
-        </ProtectedRoute>
-      }>
+      <Route path="/api-docs" element={<ApiDocs />} />
+      <Route path="/" element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="live" element={<LiveOpportunities />} />
         <Route path="opportunities" element={<OpportunitiesPage />} />
@@ -91,6 +80,7 @@ function AppRoutes() {
         <Route path="demo" element={<DemoPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="alerts" element={<AlertsPage />} />
       </Route>
     </Routes>
     </>

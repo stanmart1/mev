@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { UserPlus, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 const Signup = () => {
   const [formData, setFormData] = useState({
@@ -12,6 +13,7 @@ const Signup = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,7 +32,7 @@ const Signup = () => {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -43,8 +45,17 @@ const Signup = () => {
       const data = await response.json();
 
       if (data.success) {
-        localStorage.setItem('token', data.token);
-        navigate('/');
+        // Auto-login after successful signup
+        const loginResult = await login({
+          email: formData.email,
+          password: formData.password
+        });
+        
+        if (loginResult.success) {
+          navigate('/');
+        } else {
+          setError('Account created but login failed. Please login manually.');
+        }
       } else {
         setError(data.message || 'Signup failed');
       }

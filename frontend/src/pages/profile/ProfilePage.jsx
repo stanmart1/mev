@@ -9,8 +9,11 @@ const ProfilePage = ({ embedded = false }) => {
   const [analytics, setAnalytics] = useState(null);
   const [achievements, setAchievements] = useState([]);
   const [editing, setEditing] = useState(false);
+  const [editingPassword, setEditingPassword] = useState(false);
   const [formData, setFormData] = useState({ username: '', email: '' });
+  const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [loading, setLoading] = useState(true);
+  const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => {
     fetchProfile();
@@ -42,6 +45,32 @@ const ProfilePage = ({ embedded = false }) => {
       setEditing(false);
     } catch (error) {
       console.error('Failed to update profile:', error);
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    setPasswordError('');
+    
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError('New passwords do not match');
+      return;
+    }
+    
+    if (passwordData.newPassword.length < 6) {
+      setPasswordError('Password must be at least 6 characters');
+      return;
+    }
+    
+    try {
+      await api.put('/auth/change-password', {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      });
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setEditingPassword(false);
+      alert('Password updated successfully');
+    } catch (error) {
+      setPasswordError(error.response?.data?.message || 'Failed to update password');
     }
   };
 
@@ -94,13 +123,22 @@ const ProfilePage = ({ embedded = false }) => {
                     <h2 className="text-2xl font-bold mb-1">{profile?.username}</h2>
                     <p className="text-gray-400 text-sm">{profile?.email}</p>
                   </div>
-                  <button
-                    onClick={() => setEditing(true)}
-                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center gap-2"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                    Edit Profile
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setEditing(true)}
+                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center gap-2"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Edit Profile
+                    </button>
+                    <button
+                      onClick={() => setEditingPassword(true)}
+                      className="w-full py-2 bg-gray-600 hover:bg-gray-700 rounded-lg flex items-center justify-center gap-2"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Change Password
+                    </button>
+                  </div>
                 </>
               ) : (
                 <div className="space-y-4">
@@ -134,6 +172,63 @@ const ProfilePage = ({ embedded = false }) => {
                       onClick={() => {
                         setEditing(false);
                         setFormData({ username: profile?.username || '', email: profile?.email || '' });
+                      }}
+                      className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg flex items-center justify-center gap-2"
+                    >
+                      <X className="w-4 h-4" />
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {editingPassword && (
+                <div className="space-y-4">
+                  {passwordError && (
+                    <div className="bg-red-900/20 border border-red-700 text-red-200 px-3 py-2 rounded text-sm">
+                      {passwordError}
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Current Password</label>
+                    <input
+                      type="password"
+                      value={passwordData.currentPassword}
+                      onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">New Password</label>
+                    <input
+                      type="password"
+                      value={passwordData.newPassword}
+                      onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={passwordData.confirmPassword}
+                      onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handlePasswordChange}
+                      className="flex-1 py-2 bg-green-600 hover:bg-green-700 rounded-lg flex items-center justify-center gap-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      Update Password
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingPassword(false);
+                        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                        setPasswordError('');
                       }}
                       className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg flex items-center justify-center gap-2"
                     >

@@ -213,6 +213,19 @@ export default function Login() {
             <WalletConnect onWalletAuth={handleWalletAuth} />
           </div>
         </div>
+
+        {/* Footer */}
+        <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+          <Link to="/api-docs" className="hover:text-primary-600 dark:hover:text-primary-400">
+            API Documentation
+          </Link>
+          <span className="mx-2">•</span>
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="hover:text-primary-600 dark:hover:text-primary-400">
+            GitHub
+          </a>
+          <span className="mx-2">•</span>
+          <span>© 2024 MEV Analytics</span>
+        </div>
       </div>
     </div>
   );

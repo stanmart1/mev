@@ -15,12 +15,14 @@ import {
   BookOpen,
   TrendingUp,
   Activity,
-  Play
+  Play,
+  FileText
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import Button from './common/Button';
 import ClusterSelector from './ClusterSelector';
+import NotificationCenter from './notifications/NotificationCenter';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: BarChart3 },
@@ -31,6 +33,8 @@ const navigation = [
   { name: 'Simulations', href: '/simulations', icon: BarChart3 },
   { name: 'Activity', href: '/activity', icon: Activity },
   { name: 'Education', href: '/education', icon: BookOpen },
+  { name: 'Alerts', href: '/alerts', icon: Bell },
+  { name: 'API Docs', href: '/api-docs', icon: FileText },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -167,9 +171,7 @@ export default function Layout() {
                 {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </Button>
               
-              <Button variant="ghost" size="sm">
-                <Bell className="w-5 h-5" />
-              </Button>
+              <NotificationCenter />
 
               <div className="relative" ref={profileRef}>
                 <div className="flex items-center gap-x-2">

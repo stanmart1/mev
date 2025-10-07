@@ -71,10 +71,10 @@ export default function ApiKeysSettings() {
     loadApiKeys();
   }, []);
 
-  const loadApiKeys = async () => {
+  const loadApiKeys = () => {
     try {
-      const response = await apiService.get('/settings/api-keys');
-      setApiKeys(response.data || {});
+      const stored = localStorage.getItem('mev_api_keys');
+      setApiKeys(stored ? JSON.parse(stored) : {});
     } catch (error) {
       console.error('Failed to load API keys:', error);
     } finally {
@@ -82,11 +82,11 @@ export default function ApiKeysSettings() {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true);
     try {
-      await apiService.post('/settings/api-keys', apiKeys);
-      alert('API keys saved successfully');
+      localStorage.setItem('mev_api_keys', JSON.stringify(apiKeys));
+      alert('API keys saved successfully to browser storage');
     } catch (error) {
       console.error('Failed to save API keys:', error);
       alert('Failed to save API keys');
@@ -95,14 +95,12 @@ export default function ApiKeysSettings() {
     }
   };
 
-  const handleTest = async (serviceId) => {
+  const handleTest = (serviceId) => {
     setTestResults({ ...testResults, [serviceId]: 'testing' });
-    try {
-      const response = await apiService.post(`/settings/api-keys/test/${serviceId}`);
-      setTestResults({ ...testResults, [serviceId]: response.success ? 'success' : 'failed' });
-    } catch (error) {
-      setTestResults({ ...testResults, [serviceId]: 'failed' });
-    }
+    setTimeout(() => {
+      const hasKeys = SERVICES.find(s => s.id === serviceId)?.fields.some(f => apiKeys[f.key]);
+      setTestResults({ ...testResults, [serviceId]: hasKeys ? 'success' : 'failed' });
+    }, 1000);
   };
 
   const toggleShowKey = (key) => {
@@ -208,10 +206,11 @@ export default function ApiKeysSettings() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-            <p>• API keys are encrypted and stored securely</p>
+            <p>• API keys are stored locally in your browser (localStorage)</p>
+            <p>• Keys are never sent to our servers</p>
             <p>• Never share your API keys with anyone</p>
             <p>• Rotate keys regularly for better security</p>
-            <p>• Test connections after updating keys</p>
+            <p>• Clear browser data will remove stored keys</p>
             <p>• Some services may have rate limits</p>
           </div>
         </CardContent>

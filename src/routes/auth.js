@@ -341,6 +341,36 @@ function createAuthRoutes(database, config) {
         }
     });
 
+    router.put('/change-password', authenticateToken(authService), [
+        body('currentPassword').notEmpty(),
+        body('newPassword').isLength({ min: 6 })
+    ], async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Validation failed',
+                    errors: errors.array()
+                });
+            }
+
+            const { currentPassword, newPassword } = req.body;
+            await authService.changePassword(req.user.userId, currentPassword, newPassword);
+
+            res.json({
+                success: true,
+                message: 'Password changed successfully'
+            });
+
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    });
+
     // API Key Management routes
     router.get('/api-keys', authenticateToken(authService), async (req, res) => {
         try {
