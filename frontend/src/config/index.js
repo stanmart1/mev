@@ -1,10 +1,10 @@
 const config = {
   api: {
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api',
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'https://mev-api.scaleitpro.com/api',
     timeout: 30000,
   },
   websocket: {
-    url: import.meta.env.VITE_WS_URL || 'ws://localhost:3001',
+    url: import.meta.env.VITE_WS_URL || 'wss://mev-api.scaleitpro.com',
     reconnectInterval: 3000,
     maxReconnectAttempts: 5,
   },
