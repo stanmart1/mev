@@ -2,8 +2,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install --legacy-peer-deps --omit=optional
+COPY package*.json .npmrc ./
+RUN npm install --legacy-peer-deps --omit=optional --ignore-scripts
 
 COPY . .
 RUN npm run build
