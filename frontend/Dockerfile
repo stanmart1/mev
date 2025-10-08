@@ -2,10 +2,10 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ linux-headers eudev-dev libusb-dev
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps --omit=optional
 
 COPY . .
 RUN npm run build
